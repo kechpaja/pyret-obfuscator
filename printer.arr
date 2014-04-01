@@ -34,8 +34,12 @@ end
 fun str-expr(expr :: A.Expr, depth :: Number) -> String:
   cases (A.Expr) expr:
     | s_hint_expr(l, hints, e) => # TODO
-    | s_block(l, stmts) => # TODO
-    | s_user_block(l, expr) => 
+    | s_block(l, stmts) => 
+        for fold(acc from "", s from stmts):
+          acc + n-spaces(depth) + str-expr(s, depth)
+        end
+    | s_user_block(l, ex) => 
+        "block:\n" + str-expr(ex, depth + 1) + "\n" + n-spaces(depth) + "end\n"
     | s_var(l, name, value) => 
         "var " + str-bind(name) + " = " + str-expr(value, depth)
     | s_let(l, name, value) => 
@@ -43,8 +47,19 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
     | s_assign(l, id, value) => 
         id + " := " + str-expr(value, depth)
     | s_if_else(l, branches, _else) => 
+        sstr = n-spaces(depth) + "if " + str-expr(branches.first.test, depth)
+          + ":\n" + n-spaces(depth + 1) 
+          + str-expr(branches.first.body, depth + 1) + "\n"
+        for fold(acc from sstr, b from branches.rest):
+          acc + n-spaces(depth) + "else if " + str-expr(b.test, depth) + ":\n"
+            + n-spaces(depth + 1) + str-expr(b.body, depth + 1) + "\n"
+        end + n-spaces(depth) + "else:\n" + n-spaces(depth + 1) 
+          + str-expr(_else, depth + 1) + n-spaces(depth) + "end\n"
     | s_try(l, body, id, _except) =>
     | s_lam(l, params, args, ann, doc, body, check) => 
+        "fun(" + () + ") -> " + str-ann(ann) + "\n"
+          + str-expr(body, depth + 1)
+          + n-spaces(depth) + "end"
     | s_method(l, args, ann, doc, body, check) => 
     | s_extend(l, super, fields) => 
     | s_obj(l, fields) => 
@@ -71,6 +86,20 @@ end
 
 fun str-field(f :: A.Field, depth :: Number) -> String:
   # TODO
+end
+
+fun str-ann(ann :: A.Ann) -> String: 
+  cases (A.Ann) ann: 
+    | a_blank => ""
+    | a_any => ""
+    | a_name(l, id) => id
+    | a_arrow(l, args, ret) => 
+    | a_method(l, args, ret) => 
+    | a_record(l, fields) => 
+    | a_app(l, an, args) => 
+    | a_pred(l, an, expr) => 
+    | a_dot(l, obj, field) => 
+  end
 end
 
 fun str-bind(bind :: A.Bind) -> String: 
