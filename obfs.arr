@@ -21,6 +21,24 @@ next-name = (fun() -> (() -> String):
 end)()
 
 
+data Subst:
+  new-sub(old :: String, new :: String)
+end
+
+
+fun replace(id :: String) -> String: 
+  replace-from-subst(id, subs)
+end
+
+
+fun replace-from-susbt(id :: String, s :: List<Subst>) -> String: 
+  cases (List<Subst>) s:
+    | link(f, r) => if f.old == id: f.new else: replace-from-subst(id, r) end
+    | empty => raise("Error: can't replace unbound ID " + id)
+  end
+end
+
+
 fun obfs-prog(prog :: A.Program) -> A.Program:
   cases (A.Program) prog: 
     | s_program(l, imports, block) => 
@@ -60,22 +78,25 @@ end
 # identifiers as it encounters them. 
 fun obfs-expr(expr :: A.Expr) -> A.Expr:
   cases (A.Expr) expr: 
-    | s_hint_epxr(l, hints, e) => # TODO
-    | s_block(l, stmts) => # TODO
-    | s_user_block(l, expr) => # TODO
+    | s_hint_expr(l, hints, e) => # TODO
+    | s_block(l, stmts) => A.s_block(l, stmts.map(obfs-expr))
+    | s_user_block(l, ex) => A.s_user_block(l, obfs-expr(ex))
     | s_var(l, name, value) => # TODO
     | s_let(l, name, value) => # TODO
-    | s_assign(l, id, value) => # TODO
+    | s_assign(l, id, value) => 
+        A.s_assign(l, replace(id), 
     | s_if_else(l, branches, _else) => # TODO
     | s_try(l, body, id, _except) => # TODO
     | s_lam(l, params, args, ann, doc, body, check) => # TODO
     | s_method(l, args, ann, doc, body, check) => # TODO
-    | s_extend(l, super, fields) => # TODO
-    | s_obj(l, fields) => # TODO
+    | s_extend(l, super, fields) => 
+        A.s_extend(l, obfs-expr(super), fields.map(obfs-field))
+    | s_obj(l, fields) => 
+        A.s_obj(l, fields.map(obfs-field))
     | s_app(l, _fun, args) => # TODO
-    | s_id(l, id) => # TODO
-    | s_num(l, n) => # TODO
-    | s_bool(l, b) => # TODO
+    | s_id(l, id) => A.s_id(l, replace(id))
+    | s_num(l, n) => expr # TODO lift numbers and strings and such? 
+    | s_bool(l, b) => expr
     | s_str(l, s) => # TODO
     | s_bracket(l, obj, field) => # TODO
     | s_colon_bracket(l, obj, field) => # TODO
@@ -83,4 +104,9 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
     | s_update(l, super, fields) => # TODO
     | else => raise("Missed case in obfs-expr: " + expr.to-repr())
   end
+end
+
+
+fun obfs-field(field :: A.Member) -> A.Member:
+  # TODO
 end
