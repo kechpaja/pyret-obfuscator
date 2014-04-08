@@ -8,6 +8,26 @@ import ast as A
 fun convert-op(op :: String) -> String: 
   if op == "opis":
     "is"
+  else if op == "op==":
+    "=="
+  else if op == "op<>":
+    "<>"
+  else if op == "op<=":
+    "<="
+  else if op == "op>=":
+    ">="
+  else if op == "op>":
+    ">"
+  else if op == "op<":
+    "<"
+  else if op == "op+":
+    "+"
+  else if op == "op-":
+    "-"
+  else if op == "op*":
+    "*"
+  else if op == "op/":
+    "/"
   else:
     raise("Not a real operation: " + op)
   end
@@ -16,16 +36,17 @@ end
 fun str-prog(prog :: A.Program) -> String:
   cases (A.Program) prog: 
     | s_program(l, imports, block) => 
-        for fold(s from "", h from imports): 
-          s + str-header(h) + "\n"
-        end + "\n" + str-expr(block, 0)
+        "#lang pyret\n\n"
+          + for fold(s from "", h from imports): 
+              s + str-header(h) + "\n"
+            end + "\n" + str-expr(block, 0)
   end
 end
 
 fun str-header(header :: A.Header) -> String:
   cases (A.Header) header:
     | s_import(l, file, name) => 
-        "import " + str-import-type(file) + " as " + name
+        "import \"" + str-import-type(file) + "\" as " + name
     | s_provide(l, block) => "provide " + str-expr(block, 0)
     | s_provide_all(l) => "provide *"
   end
@@ -81,33 +102,58 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
             + n-spaces(depth + 1) + str-expr(b.body, depth + 1) + "\n"
         end + n-spaces(depth) + "else:\n" + n-spaces(depth + 1) 
           + str-expr(_else, depth + 1) + n-spaces(depth) + "end\n"
+    | s_cases(l, type, val, branches) => 
+        str = "cases (" + str-ann(type) + ") " + str-expr(val, depth) + ":\n"
+        for fold(s from str, b from branches):
+          s + cases (A.CasesBranch) b:
+                | s_cases_branch(lo, name, args, body) => 
+                    n-spaces(depth + 1) + "| " + name + "("
+                      + args.map(str-bind).join-str(",") + ") => \n"
+                      + str-expr(body, depth + 3)
+              end + n-spaces(depth) + "end"
+        end
     | s_try(l, body, id, _except) => "TODO" # TODO
+    | s_op(l, op, left, right) => 
+        str-expr(left, depth) + " " + convert-op(op) 
+          + " " + str-expr(right, depth)
     | s_check_test(l, op, left, right) => 
         str-expr(left, depth + 1) + " "
           + convert-op(op) + " " + str-expr(right, depth + 1)
+    | s_not(l, ex) => "not " + str-expr(ex, depth)
+    | s_paren(l, ex) => "(" + str-expr(ex, depth) + ")"
     | s_lam(l, params, args, ann, doc, body, check) => 
         "fun(" + (for map(a from args): str-bind(a) end).join-str(",")
           + ")" + if A.is-a_blank(ann) or A.is-a_any(ann):
-                    " -> " + str-ann(ann) 
-                  else:
                     ""
+                  else:
+                    " -> " + str-ann(ann)
                   end
-          + "\n" + str-expr(body, depth + 1)
+          + ":\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | s_method(l, args, ann, doc, body, check) => 
         "fun(" + (for map(a from args): str-bind(a) end).join-str(",")
           + ")" + if A.is-a_blank(ann) or A.is-a_any(ann):
-                    " -> " + str-ann(ann)
-                  else:
                     ""
+                  else:
+                    " -> " + str-ann(ann)
                   end
-          + "\n" + str-expr(body, depth + 1)
+          + ":\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
-    | s_extend(l, super, fields) => "EXTEND" 
+    | s_extend(l, super, fields) =>
+        str-expr(super, depth) + 
+          if not is-empty(fields):
+            ".{" + (for map(f from fields):
+                      str-field(f, depth)
+                    end).join-str(",") + "}"
+          else:
+            ""
+          end
     | s_obj(l, fields) => 
         "{" + (for map(f from fields): 
                  str-field(f, depth) 
                end).join-str(",") + "}"
+    | s_list(l, values) => 
+        "[" + values.map(str-expr(_, depth)).join-str(",") + "]"
     | s_app(l, _fun, args) => 
         str-expr(_fun, depth) + "(" 
           + (for map(a from args): str-expr(a, depth) end).join-str(",") + ")"
@@ -119,6 +165,11 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
         str-expr(obj, depth) + ".[" + str-expr(field, depth) + "]"
     | s_colon_bracket(l, obj, field) => 
         str-expr(obj, depth) + ":[" + str-expr(field, depth) + "]"
+    | s_data(l, name, params, mixins, variants, shared_members, ch) =>
+        str = "data " + name + ":\n"
+        for fold(s from str, v from variants):
+          s + n-spaces(depth + 1) + "| " + "\n" # TODO handle variants
+        end + n-spaces(depth) + "end\n" # TODO handle shared members and check
     | s_dot(l, obj, field) =>
         str-expr(obj, depth) + "." + field
     | s_get_bang(l, obj, field) => str-expr(obj, depth) + "!" + field
@@ -127,7 +178,7 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
     | s_check(l, body) => 
         n-spaces(depth) + "check:\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
-    | else => raise("Missed case in printer: " + expr.to-repr())
+    | else => raise("Missed case in printer: " + expr.torepr())
   end
 end
 
@@ -160,7 +211,7 @@ fun str-bind(bind :: A.Bind) -> String:
   bind.id + if A.is-a_blank(bind.ann) or A.is-a_any(bind.ann):
               ""
             else:
-              " : " + str-ann(bind.ann)
+              " :: " + str-ann(bind.ann)
             end
 end
 

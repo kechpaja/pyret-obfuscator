@@ -1,5 +1,13 @@
 #lang pyret
 
-fun f(x :: Number) -> String:
-  x.tostring()
+data Dat:
+  | dat(x :: Number)
 end
+
+fun f(d :: Dat) -> Number:
+  cases (Dat) d:
+    | dat(x) => x
+  end
+end
+
+print(f(dat(8)))

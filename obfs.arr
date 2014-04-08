@@ -152,7 +152,7 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
                 end,
                 for map(a from args):
                   update-subs(a.id, next-name())
-                  A.s_bind(a.l, replace(a.id), a.ann)
+                  A.s_bind(a.l, replace(a.id), obfs-ann(a.ann))
                 end,
                 ann, 
                 "",
@@ -178,8 +178,31 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
         A.s_if_else(l, 
                     for map(b from branches): obfs-branch(b) end,
                     obfs-expr(_else))
+    | s_for(l, _fun, binds, ann, ex) => 
+        A.s_for(l,
+                obfs-expr(_fun),
+                for map(b from binds):
+                  cases (A.ForBind) b:
+                    | s_for_bind(lo, arg, col) => 
+                        update-subs(arg.id, next-name())
+                        A.s_for_bind(lo, 
+                                     A.s_bind(arg.l, replace(arg.id), arg.ann),
+                                     obfs-expr(col))
+                  end
+                end,
+                ann,
+                obfs-expr(ex))
     | s_cases(l, type, val, branches) => 
-        # TODO
+        A.s_cases(l, 
+                  obfs-ann(type), 
+                  obfs-expr(val), 
+                  branches.map(obfs-case-branch))
+    | s_cases_else(l, type, val, branches, _else) => 
+        A.s_cases_else(l, 
+                       obfs-ann(type), 
+                       obfs-expr(val), 
+                       branches.map(obfs-case-branch),
+                       obfs-expr(_else))
     | s_try(l, body, id, _except) => 
         update-subs(id, next-name())
         A.s_try(l, obfs-expr(body), replace(id), obfs-expr(_except))
@@ -199,7 +222,7 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
                 end,
                 for map(a from args): 
                   update-subs(a.id, next-name())
-                  A.s_bind(a.l, replace(a.id), a.ann)
+                  A.s_bind(a.l, replace(a.id), obfs-ann(a.ann))
                 end,
                 ann,
                 "",
@@ -209,7 +232,7 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
         A.s_method(l, 
                    for map(a from args):
                      update-subs(a.id, next-name())
-                     A.s_bind(a.l, replace(a.id), a.ann)
+                     A.s_bind(a.l, replace(a.id), obfs-ann(a.ann))
                    end,
                    ann,
                    "",
@@ -255,7 +278,7 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
         A.s_get_bang(l, obfs-expr(obj), obfs-expr(field))
     | s_update(l, super, fields) => 
         A.s_update(l, obfs-expr(super), fields.map(obfs-field))
-    | else => raise("Missed case in obfs-expr: " + expr.to-repr())
+    | else => raise("Missed case in obfs-expr: " + expr.torepr())
   end
 end
 
@@ -273,6 +296,32 @@ fun obfs-branch(branch :: A.IfBranch) -> A.IfBranch:
   end
 end
 
+fun obfs-ann(ann :: A.Ann) -> A.Ann:
+  cases (A.Ann) ann:
+    | a_blank => A.a_blank
+    | a_any => A.a_any
+    | a_name(l, id) => A.a_name(l, replace(id))
+    | a_arrow(l, args, ret) => 
+    | a_record(l, fields) => 
+    | a_app(l, an, args) => 
+    | a_pred(l, an, expr) =>
+    | a_dot(l, obj, field) => 
+  end
+end
+
+fun obfs-case-branch(branch :: A.CasesBranch) -> A.CasesBranch:
+  cases (A.CasesBranch) branch: 
+    | s_cases_branch(l, name, args, body) => 
+        A.s_cases_branch(l, 
+                         replace(name), 
+                         for map(a from args):
+                           update-subs(a.id, next-name())
+                           A.s_bind(a.l, replace(a.id), a.ann)
+                         end,
+                         obfs-expr(body))
+  end
+end
+
 
 
 ###########################
@@ -287,6 +336,8 @@ program = infile.read-file()
 infile.close-file()
 
 
-print(P.str-prog(obfs-prog(A.parse(program, "", {check : true}).pre-desugar)))
+result = P.str-prog(obfs-prog(A.parse(program, "", {check : true}).pre-desugar))
 
-#outfile = F.output-file(C.args.rest.first)
+outfile = F.output-file(C.args.rest.first, false)
+outfile.display(result)
+outfile.close-file()
