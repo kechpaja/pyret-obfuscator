@@ -1,6 +1,17 @@
 #lang pyret
 
+provide *
+
 import ast as A
+
+
+fun convert-op(op :: String) -> String: 
+  if op == "opis":
+    "is"
+  else:
+    raise("Not a real operation: " + op)
+  end
+end
 
 fun str-prog(prog :: A.Program) -> String:
   cases (A.Program) prog: 
@@ -28,22 +39,37 @@ fun str-import-type(it :: A.ImportType) -> String:
 end
 
 fun n-spaces(n :: Number) -> String: 
-  if n <= 0: "" else n-spaces(n - 1) + "  " end
+  if n <= 0: "" else: n-spaces(n - 1) + "  " end
 end
 
 fun str-expr(expr :: A.Expr, depth :: Number) -> String:
   cases (A.Expr) expr:
-    | s_hint_expr(l, hints, e) => # TODO
+    | s_hint_exp(l, hints, e) => 
+        print(hints.first)
+        ""
     | s_block(l, stmts) => 
         for fold(acc from "", s from stmts):
-          acc + n-spaces(depth) + str-expr(s, depth)
+          acc + n-spaces(depth) + str-expr(s, depth) + "\n"
         end
     | s_user_block(l, ex) => 
         "block:\n" + str-expr(ex, depth + 1) + "\n" + n-spaces(depth) + "end\n"
+    | s_fun(l, name, params, args, ann, doc, body, check) => 
+        "fun " + name + "("
+          + (for map(a from args): str-bind(a) end).join-str(",")
+          + ")" + if A.is-a_any(ann) or A.is-a_blank(ann): 
+                    "" 
+                  else: 
+                    " -> " + str-ann(ann) 
+                  end
+          + ":\n" + str-expr(body, depth + 1)
+          + n-spaces(depth) + "end"
     | s_var(l, name, value) => 
         "var " + str-bind(name) + " = " + str-expr(value, depth)
     | s_let(l, name, value) => 
-        str-bind(name) + " = " + str-expr(value, depth) 
+        str-bind(name) + " = " + str-expr(value, depth)
+    | s_when(l, test, block) => 
+        n-spaces(depth) + "when " + str-expr(test, depth) + ":\n"
+          + str-expr(block, depth + 1)
     | s_assign(l, id, value) => 
         id + " := " + str-expr(value, depth)
     | s_if_else(l, branches, _else) => 
@@ -55,13 +81,29 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
             + n-spaces(depth + 1) + str-expr(b.body, depth + 1) + "\n"
         end + n-spaces(depth) + "else:\n" + n-spaces(depth + 1) 
           + str-expr(_else, depth + 1) + n-spaces(depth) + "end\n"
-    | s_try(l, body, id, _except) =>
+    | s_try(l, body, id, _except) => "TODO" # TODO
+    | s_check_test(l, op, left, right) => 
+        str-expr(left, depth + 1) + " "
+          + convert-op(op) + " " + str-expr(right, depth + 1)
     | s_lam(l, params, args, ann, doc, body, check) => 
-        "fun(" + () + ") -> " + str-ann(ann) + "\n"
-          + str-expr(body, depth + 1)
+        "fun(" + (for map(a from args): str-bind(a) end).join-str(",")
+          + ")" + if A.is-a_blank(ann) or A.is-a_any(ann):
+                    " -> " + str-ann(ann) 
+                  else:
+                    ""
+                  end
+          + "\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | s_method(l, args, ann, doc, body, check) => 
-    | s_extend(l, super, fields) => 
+        "fun(" + (for map(a from args): str-bind(a) end).join-str(",")
+          + ")" + if A.is-a_blank(ann) or A.is-a_any(ann):
+                    " -> " + str-ann(ann)
+                  else:
+                    ""
+                  end
+          + "\n" + str-expr(body, depth + 1)
+          + n-spaces(depth) + "end"
+    | s_extend(l, super, fields) => "EXTEND" 
     | s_obj(l, fields) => 
         "{" + (for map(f from fields): 
                  str-field(f, depth) 
@@ -77,15 +119,26 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
         str-expr(obj, depth) + ".[" + str-expr(field, depth) + "]"
     | s_colon_bracket(l, obj, field) => 
         str-expr(obj, depth) + ":[" + str-expr(field, depth) + "]"
+    | s_dot(l, obj, field) =>
+        str-expr(obj, depth) + "." + field
     | s_get_bang(l, obj, field) => str-expr(obj, depth) + "!" + field
     | s_update(l, super, fields) => 
-        str-expr(super, depth) + "!" + 
+        str-expr(super, depth) + "!" + "SOMETHING"
+    | s_check(l, body) => 
+        n-spaces(depth) + "check:\n" + str-expr(body, depth + 1)
+          + n-spaces(depth) + "end"
     | else => raise("Missed case in printer: " + expr.to-repr())
   end
 end
 
-fun str-field(f :: A.Field, depth :: Number) -> String:
-  # TODO
+fun str-field(f :: A.Member, depth :: Number) -> String:
+  cases (A.Member) f:
+    | s_data_field(l, name, value) => 
+        str-expr(name, depth) + " : " + str-expr(value, depth)
+    | s_mutable_field(l, name, ann, value) => 
+    | s_once_field(l, name, ann, value) => 
+    | s_method_field(l, name, args, ann, doc, body, check) => 
+  end
 end
 
 fun str-ann(ann :: A.Ann) -> String: 
@@ -94,14 +147,27 @@ fun str-ann(ann :: A.Ann) -> String:
     | a_any => ""
     | a_name(l, id) => id
     | a_arrow(l, args, ret) => 
-    | a_method(l, args, ret) => 
-    | a_record(l, fields) => 
-    | a_app(l, an, args) => 
-    | a_pred(l, an, expr) => 
-    | a_dot(l, obj, field) => 
+        "(" + args.map(str-ann).join-str(",") + ") -> " + str-ann(ret)
+    | a_method(l, args, ret) => "METHOD"
+    | a_record(l, fields) => "RECORD"
+    | a_app(l, an, args) => "APP"
+    | a_pred(l, an, expr) => "PRED"
+    | a_dot(l, obj, field) => "DOT"
   end
 end
 
 fun str-bind(bind :: A.Bind) -> String: 
-  bind.id # TODO this is good enough for now
+  bind.id + if A.is-a_blank(bind.ann) or A.is-a_any(bind.ann):
+              ""
+            else:
+              " : " + str-ann(bind.ann)
+            end
 end
+
+
+fun test-func(prog :: String) -> String: 
+  str-prog(A.parse(prog, "", {check : true}).pre-desugar)
+end
+
+
+##print(test-func("fun f(x): x end\nf(8)\ncheck: f(8) is 8\nend"))
