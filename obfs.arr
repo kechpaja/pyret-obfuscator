@@ -5,8 +5,22 @@ import cmdline as C
 import file as F
 import "printer.arr" as P
 
+
+fun num-to-string(n :: Number) -> String:
+  if n == 0:
+    "0"
+  else if n == 1:
+    "O"
+  else if n.modulo(2) == 0:
+    "0" + num-to-string(n / 2)
+  else: 
+    "O" + num-to-string((n - 1) / 2)
+  end
+end
+
 fun n-underscores(n :: Number) -> String: 
-  if n <= 2: "__" else: n-underscores(n - 1) + "_" end
+  #if n <= 2: "__" else: n-underscores(n - 1) + "_" end
+  "O" + num-to-string(n)
 end
 
 # Functions to create new identifiers. They will be as visually similar 
@@ -175,8 +189,11 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
     | s_if(l, branches) => 
         A.s_if(l, for map(b from branches): obfs-branch(b) end)
     | s_if_else(l, branches, _else) => 
+        newb = [A.s_if_branch(l,
+                              A.s_op(l, "op==", A.s_num(l, 8), A.s_num(l, 3)),
+                              A.s_block(l, [A.s_num(l, 0)]))]
         A.s_if_else(l, 
-                    for map(b from branches): obfs-branch(b) end,
+                    newb + (for map(b from branches): obfs-branch(b) end),
                     obfs-expr(_else))
     | s_for(l, _fun, binds, ann, ex) => 
         A.s_for(l,
@@ -269,7 +286,7 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
                    replace(p)
                  end,
                  mixins.map(obfs-expr),
-                 variants, # TODO replace this
+                 variants.map(obfs-variant),
                  shared_members.map(obfs-field),
                  obfs-expr(ch))
     | s_dot(l, obj, field) => 
@@ -282,6 +299,26 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
   end
 end
 
+
+fun obfs-variant(v :: A.Variant) -> A.Variant:
+  cases (A.Variant) v:
+    | s_variant(l, vname, members, with-members) => 
+        update-subs(vname, next-name())
+        A.s_variant(l, 
+                    replace(vname), 
+                    members.map(obfs-variant-member),
+                    with-members) # TODO obfs with-members
+    | s_singleton_variant(l, vname, with-members) => 
+  end
+end
+
+fun obfs-variant-member(vm :: A.VariantMember) -> A.VariantMember:
+  cases (A.VariantMember) vm:
+    | s_variant_member(l, type, b) => 
+        update-subs(b.id, next-name())
+        A.s_variant_member(l, type, A.s_bind(b.l, replace(b.id), b.ann))
+  end
+end
 
 fun obfs-field(field :: A.Member) -> A.Member:
   cases (A.Member) field: 

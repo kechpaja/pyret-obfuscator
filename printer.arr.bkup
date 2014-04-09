@@ -73,7 +73,7 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
           acc + n-spaces(depth) + str-expr(s, depth) + "\n"
         end
     | s_user_block(l, ex) => 
-        "block: " + str-expr(ex, depth + 1) + " " + n-spaces(depth) + "end "
+        "block:\n" + str-expr(ex, depth + 1) + "\n" + n-spaces(depth) + "end\n"
     | s_fun(l, name, params, args, ann, doc, body, check) => 
         "fun " + name + "("
           + (for map(a from args): str-bind(a) end).join-str(",")
@@ -82,7 +82,7 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
                   else: 
                     " -> " + str-ann(ann) 
                   end
-          + ": " + str-expr(body, depth + 1)
+          + ":\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | s_var(l, name, value) => 
         "var " + str-bind(name) + " = " + str-expr(value, depth)
@@ -95,20 +95,20 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
         id + " := " + str-expr(value, depth)
     | s_if_else(l, branches, _else) => 
         sstr = "if " + str-expr(branches.first.test, depth)
-          + ": " 
-          + str-expr(branches.first.body, depth + 1) + " "
+          + ":\n" 
+          + str-expr(branches.first.body, depth + 1) + "\n"
         for fold(acc from sstr, b from branches.rest):
-          acc + n-spaces(depth) + "else if " + str-expr(b.test, depth) + ": "
+          acc + n-spaces(depth) + "else if " + str-expr(b.test, depth) + ":\n"
             + n-spaces(depth + 1) + str-expr(b.body, depth + 1)
-        end + n-spaces(depth) + "else: "
-          + str-expr(_else, depth + 1) + n-spaces(depth) + "end "
+        end + n-spaces(depth) + "else:\n"
+          + str-expr(_else, depth + 1) + n-spaces(depth) + "end\n"
     | s_cases(l, type, val, branches) => 
-        str = "cases (" + str-ann(type) + ") " + str-expr(val, depth) + ": "
+        str = "cases (" + str-ann(type) + ") " + str-expr(val, depth) + ":\n"
         for fold(s from str, b from branches):
           s + cases (A.CasesBranch) b:
                 | s_cases_branch(lo, name, args, body) => 
                     n-spaces(depth + 1) + "| " + name + "("
-                      + args.map(str-bind).join-str(",") + ") => "
+                      + args.map(str-bind).join-str(",") + ") => \n"
                       + str-expr(body, depth + 3)
               end + n-spaces(depth) + "end"
         end
@@ -128,7 +128,7 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
                   else:
                     " -> " + str-ann(ann)
                   end
-          + ": " + str-expr(body, depth + 1)
+          + ":\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | s_method(l, args, ann, doc, body, check) => 
         "fun(" + (for map(a from args): str-bind(a) end).join-str(",")
@@ -137,7 +137,7 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
                   else:
                     " -> " + str-ann(ann)
                   end
-          + ": " + str-expr(body, depth + 1)
+          + ":\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | s_extend(l, super, fields) =>
         str-expr(super, depth) + 
@@ -166,18 +166,18 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
     | s_colon_bracket(l, obj, field) => 
         str-expr(obj, depth) + ":[" + str-expr(field, depth) + "]"
     | s_data(l, name, params, mixins, variants, shared_members, ch) =>
-        str = "data " + name + ": "
+        str = "data " + name + ":\n"
         for fold(s from str, v from variants):
           s + n-spaces(depth + 1) + "| " + str-variant(v, depth)
-          + " " # TODO handle variants
-        end + n-spaces(depth) + "end " # TODO handle shared members and check
+          + "\n" # TODO handle variants
+        end + n-spaces(depth) + "end\n" # TODO handle shared members and check
     | s_dot(l, obj, field) =>
         str-expr(obj, depth) + "." + field
     | s_get_bang(l, obj, field) => str-expr(obj, depth) + "!" + field
- #   | s_update(l, super, fields) => 
-  #      str-expr(super, depth) + "!" + "SOMETHING"
+    | s_update(l, super, fields) => 
+        str-expr(super, depth) + "!" + "SOMETHING"
     | s_check(l, body) => 
-        n-spaces(depth) + "check: " + str-expr(body, depth + 1)
+        n-spaces(depth) + "check:\n" + str-expr(body, depth + 1)
           + n-spaces(depth) + "end"
     | else => raise("Missed case in printer: " + expr.torepr())
   end
@@ -216,15 +216,14 @@ fun str-ann(ann :: A.Ann) -> String:
     | a_name(l, id) => id
     | a_arrow(l, args, ret) => 
         "(" + args.map(str-ann).join-str(",") + ") -> " + str-ann(ret)
-  #  | a_method(l, args, ret) => "METHOD"
+    | a_method(l, args, ret) => "METHOD"
     | a_record(l, fields) => 
         "{" + (for map(f from fields):
                  f.name + " : " + str-ann(f.ann)
                end).join-str(",") + "}"
-  #  | a_app(l, an, args) => "APP"
-  #  | a_pred(l, an, expr) => "PRED"
+    | a_app(l, an, args) => "APP"
+    | a_pred(l, an, expr) => "PRED"
     | a_dot(l, obj, field) => obj + "." + field
-    | else => raise("Case not implemented in str-ann")
   end
 end
 
