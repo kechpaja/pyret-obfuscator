@@ -309,6 +309,10 @@ fun obfs-variant(v :: A.Variant) -> A.Variant:
                     members.map(obfs-variant-member),
                     with-members) # TODO obfs with-members
     | s_singleton_variant(l, vname, with-members) => 
+        update-subs(vname, next-name())
+        A.s_singleton_variant(l, 
+                              replace(vname), 
+                              with-members) # TODO with-members
   end
 end
 

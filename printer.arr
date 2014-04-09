@@ -110,8 +110,8 @@ fun str-expr(expr :: A.Expr, depth :: Number) -> String:
                     n-spaces(depth + 1) + "| " + name + "("
                       + args.map(str-bind).join-str(",") + ") => "
                       + str-expr(body, depth + 3)
-              end + n-spaces(depth) + "end"
-        end
+              end 
+        end + n-spaces(depth) + "end" # TODO fix in backup
     | s_try(l, body, id, _except) => "TODO" # TODO
     | s_op(l, op, left, right) => 
         str-expr(left, depth) + " " + convert-op(op) 
