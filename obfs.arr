@@ -51,17 +51,6 @@ end
 var subs = []
 var lets = []
 
-
-fun update-subs(old :: String, new :: String) -> Nothing: 
-  when not contains(subs, old):
-    subs := link(new-sub(old, new), subs)
-  end
-end
-
-fun replace(id :: String) -> String: 
-  replace-from-subst(id, subs)
-end
-
 fun replace-from-subst(id :: String, s :: List<Subst>) -> String: 
   cases (List<Subst>) s:
     | link(f, r) => if f.old == id: f.new else: replace-from-subst(id, r) end
@@ -77,15 +66,22 @@ fun contains(lst :: List, s) -> Boolean:
   end
 end
 
+fun update-subs(old :: String, new :: String) -> Nothing: 
+  when not contains(subs, old):
+    subs := link(new-sub(old, new), subs)
+  end
+end
+
+fun replace(id :: String) -> String: 
+  replace-from-subst(id, subs)
+end
+
+
 # We are going to lift strings and numbers as well. 
 fun update-lets(value :: A.Expr, name :: String) -> Nothing: 
   when not contains(lets, value):
     lets := link(new-let(value, name), lets)
   end
-end
-
-fun replace-literal(val :: A.Expr) -> String:
-  replace-literal-from-lets(val, lets)
 end
 
 fun replace-literal-from-lets(val :: A.Expr, l :: List<Let>) -> String:
@@ -94,6 +90,10 @@ fun replace-literal-from-lets(val :: A.Expr, l :: List<Let>) -> String:
         if f.val == val: f.name else: replace-literal-from-lets(val, r) end
     | empty => raise("Error")
   end
+end
+
+fun replace-literal(val :: A.Expr) -> String:
+  replace-literal-from-lets(val, lets)
 end
 
 fun add-lifted-stuff(stmts :: List<A.Expr>) -> List<A.Expr>:
@@ -106,22 +106,6 @@ fun add-lifted-stuff(stmts :: List<A.Expr>) -> List<A.Expr>:
 end
 
 
-
-
-fun obfs-prog(prog :: A.Program) -> A.Program:
-  cases (A.Program) prog: 
-    | s_program(l, imports, block) => 
-        expr = obfs-expr(block)
-        cases (A.Expr) expr:
-          | s_block(lo, stmts) => 
-                A.s_program(l, 
-                            for map(i from imports): obfs-header(i) end, 
-                            A.s_block(lo, add-lifted-stuff(stmts)))
-                            # TODO probably takes a map as argument as well
-          | else => raise("Problem!")
-        end
-  end
-end
 
 fun obfs-header(header :: A.Header) -> A.Header:
   cases (A.Header) header:
@@ -138,18 +122,75 @@ fun obfs-import-type(it :: A.ImportType) -> A.ImportType:
   end
 end
 
+fun obfs-variant-member(vm :: A.VariantMember) -> A.VariantMember:
+  cases (A.VariantMember) vm:
+    | s_variant_member(l, type, b) => 
+        update-subs(b.id, next-name())
+        A.s_variant_member(l, type, A.s_bind(b.l, replace(b.id), b.ann))
+  end
+end
 
-# TODO make sure that we don't assume names from imports are defined here.
-# We shouldn't replace the field names in lookups, unless they are defined in
-# the current program, and won't be used elsewhere.
-# Or maybe we should just assume that the obfuscator runs on a complete
-# program, and any problems that that causes can be dealt with later. 
+fun obfs-variant(v :: A.Variant) -> A.Variant:
+  cases (A.Variant) v:
+    | s_variant(l, vname, members, with-members) => 
+        update-subs(vname, next-name())
+        A.s_variant(l, 
+                    replace(vname), 
+                    members.map(obfs-variant-member),
+                    with-members) # TODO obfs with-members
+    | s_singleton_variant(l, vname, with-members) => 
+        update-subs(vname, next-name())
+        A.s_singleton_variant(l, 
+                              replace(vname), 
+                              with-members) # TODO with-members
+  end
+end
+
+fun obfs-field(field :: A.Member) -> A.Member:
+  cases (A.Member) field: 
+    | s_data_field(l, name, value) => field
+  end
+end
+
+fun obfs-branch(branch :: A.IfBranch) -> A.IfBranch:
+  cases (A.IfBranch) branch:
+    | s_if_branch(l, test, body) => 
+        A.s_if_branch(l, obfs-expr(test), obfs-expr(body))
+  end
+end
+
+fun obfs-ann(ann :: A.Ann) -> A.Ann:
+  cases (A.Ann) ann:
+    | a_blank => A.a_blank
+    | a_any => A.a_any
+    | a_name(l, id) => A.a_name(l, replace(id))
+    | a_arrow(l, args, ret) => A.a_arrow(l, args.map(obfs-ann), obfs-ann(ret))
+    | a_record(l, fields) => A.a_arrow(l, for map(f from fields):
+                                            update-subs(f.name, next-name())
+                                            A.a_field(f.l,
+                                                      replace(f.name),
+                                                      obfs-ann(f.ann))
+                                          end)
+    | a_app(l, an, args) => A.a_app(l, obfs-ann(an), args.map(obfs-ann))
+    | a_pred(l, an, expr) => raise("jkl;")
+    | a_dot(l, obj, field) => A.a_dot(l, replace(obj), replace(field))
+  end
+end
+
+fun obfs-case-branch(branch :: A.CasesBranch) -> A.CasesBranch:
+  cases (A.CasesBranch) branch: 
+    | s_cases_branch(l, name, args, body) => 
+        A.s_cases_branch(l, 
+                         replace(name), 
+                         for map(a from args):
+                           update-subs(a.id, next-name())
+                           A.s_bind(a.l, replace(a.id), obfs-ann(a.ann))
+                         end,
+                         obfs-expr(body))
+  end
+end
 
 
-
-# TODO this program will work much like filter-lets in the compiler. 
-# It will need to pass a substitution set along with each call, and replace
-# identifiers as it encounters them. 
 fun obfs-expr(expr :: A.Expr) -> A.Expr:
   cases (A.Expr) expr: 
     | s_hint_exp(l, hints, e) => 
@@ -300,68 +341,21 @@ fun obfs-expr(expr :: A.Expr) -> A.Expr:
 end
 
 
-fun obfs-variant(v :: A.Variant) -> A.Variant:
-  cases (A.Variant) v:
-    | s_variant(l, vname, members, with-members) => 
-        update-subs(vname, next-name())
-        A.s_variant(l, 
-                    replace(vname), 
-                    members.map(obfs-variant-member),
-                    with-members) # TODO obfs with-members
-    | s_singleton_variant(l, vname, with-members) => 
-        update-subs(vname, next-name())
-        A.s_singleton_variant(l, 
-                              replace(vname), 
-                              with-members) # TODO with-members
+fun obfs-prog(prog :: A.Program) -> A.Program:
+  cases (A.Program) prog: 
+    | s_program(l, imports, block) => 
+        expr = obfs-expr(block)
+        cases (A.Expr) expr:
+          | s_block(lo, stmts) => 
+                A.s_program(l, 
+                            for map(i from imports): obfs-header(i) end, 
+                            A.s_block(lo, add-lifted-stuff(stmts)))
+                            # TODO probably takes a map as argument as well
+          | else => raise("Problem!")
+        end
   end
 end
 
-fun obfs-variant-member(vm :: A.VariantMember) -> A.VariantMember:
-  cases (A.VariantMember) vm:
-    | s_variant_member(l, type, b) => 
-        update-subs(b.id, next-name())
-        A.s_variant_member(l, type, A.s_bind(b.l, replace(b.id), b.ann))
-  end
-end
-
-fun obfs-field(field :: A.Member) -> A.Member:
-  cases (A.Member) field: 
-    | s_data_field(l, name, value) => field
-  end
-end
-
-fun obfs-branch(branch :: A.IfBranch) -> A.IfBranch:
-  cases (A.IfBranch) branch:
-    | s_if_branch(l, test, body) => 
-        A.s_if_branch(l, obfs-expr(test), obfs-expr(body))
-  end
-end
-
-fun obfs-ann(ann :: A.Ann) -> A.Ann:
-  cases (A.Ann) ann:
-    | a_blank => A.a_blank
-    | a_any => A.a_any
-    | a_name(l, id) => A.a_name(l, replace(id))
-    | a_arrow(l, args, ret) => 
-    | a_record(l, fields) => 
-    | a_app(l, an, args) => 
-    | a_pred(l, an, expr) =>
-    | a_dot(l, obj, field) => 
-  end
-end
-
-fun obfs-case-branch(branch :: A.CasesBranch) -> A.CasesBranch:
-  cases (A.CasesBranch) branch: 
-    | s_cases_branch(l, name, args, body) => 
-        A.s_cases_branch(l, 
-                         replace(name), 
-                         for map(a from args):
-                           update-subs(a.id, next-name())
-                           A.s_bind(a.l, replace(a.id), a.ann)
-                         end,
-                         obfs-expr(body))
-  end
-end
 
 
 
